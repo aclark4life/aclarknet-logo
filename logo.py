@@ -24,7 +24,7 @@ def create_image(filename):
     d.multiline_text((15, -15), "ACLARK.NET", font=fnt, fill=(255, 255, 255))
 
     fontname = filename.split(".")[0]  # Remove file extension
-    out.save("logo_%s.png" % fontname, "PNG")
+    out.save("aclarknet-logo.png", "PNG")
 
 
 if __name__ == "__main__":
