@@ -50,7 +50,10 @@ include base.mk
 #
 # Here you can override variables, targets, etc.
 #
-#.DEFAULT_GOAL := commit-push
-#PROJECT := project
+.DEFAULT_GOAL := commit-push
+PROJECT := aclarknet-logo
 .PHONY: serve
 serve: django-serve-webpack
+
+logo:
+	python3 logo.py
