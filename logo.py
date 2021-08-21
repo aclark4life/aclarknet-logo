@@ -13,7 +13,7 @@ def create_image(filename):
     Create image
     """
 
-    out = Image.new("RGBA", (500, 100), (0, 0, 0, 0))
+    out = Image.new("RGBA", (600, 100), (0, 0, 0, 0))
     # get a font
     fnt = ImageFont.truetype(filename, 100)
     print(filename)
