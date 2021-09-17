@@ -23,7 +23,7 @@ def create_image(filename):
     # https://www.geeksforgeeks.org/python-pil-imagedraw-draw-rectangle/
     w, h = 500, 50
     shape = [(40, 40), (w - 10, h - 10)]
-    d.rectangle(shape, fill=(255, 255, 255, 0), outline="white")
+    # d.rectangle(shape, fill=(255, 255, 255, 0), outline="white")
 
     # draw multiline text
     d.multiline_text((15, -15), "ACLARKNET", font=fnt, fill=(255, 255, 255))
