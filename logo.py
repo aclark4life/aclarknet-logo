@@ -13,7 +13,7 @@ def create_image(filename):
     Create image
     """
 
-    out = Image.new("RGBA", (600, 100), (0, 0, 0, 0))
+    out = Image.new("RGBA", (600, 600), (0, 0, 0, 0))
     # get a font
     fnt = ImageFont.truetype(filename, 100)
     print(filename)
@@ -29,7 +29,7 @@ def create_image(filename):
     # White text
     # d.multiline_text((15, -15), "ACLARKNET", font=fnt, fill=(255, 255, 255))
     # Black text
-    d.multiline_text((15, -15), "ACLARKNET", font=fnt, fill=(0, 0, 0))
+    d.multiline_text((20, 220), "ACLARKNET", font=fnt, fill=(0, 0, 0))
 
     fontname = filename.split(".")[0]  # Remove file extension
     out.save("aclarknet-logo.png", "PNG")
