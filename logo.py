@@ -26,7 +26,10 @@ def create_image(filename):
     # d.rectangle(shape, fill=(255, 255, 255, 0), outline="white")
 
     # draw multiline text
-    d.multiline_text((15, -15), "ACLARKNET", font=fnt, fill=(255, 255, 255))
+    # White text
+    # d.multiline_text((15, -15), "ACLARKNET", font=fnt, fill=(255, 255, 255))
+    # Black text
+    d.multiline_text((15, -15), "ACLARKNET", font=fnt, fill=(0, 0, 0))
 
     fontname = filename.split(".")[0]  # Remove file extension
     out.save("aclarknet-logo.png", "PNG")
