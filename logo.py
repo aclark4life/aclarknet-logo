@@ -29,10 +29,10 @@ def create_image(filename):
     # White text
     # d.multiline_text((15, -15), "ACLARKNET", font=fnt, fill=(255, 255, 255))
     # Black text
-    d.multiline_text((20, 220), "ACLARKNET", font=fnt, fill=(0, 0, 0))
+    d.multiline_text((20, 220), "ACLARK.NET", font=fnt, fill=(0, 0, 0))
 
     fontname = filename.split(".")[0]  # Remove file extension
-    out.save("aclarknet-logo.png", "PNG")
+    out.save("logo_NotoSans-Regular.png", "PNG")
 
 
 if __name__ == "__main__":
