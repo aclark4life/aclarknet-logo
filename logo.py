@@ -1,43 +1,51 @@
-# Via https://pillow.readthedocs.io/en/stable/reference/ImageDraw.html#
-
-# Fonts via https://github.com/python-pillow/Pillow/tree/master/Tests/fonts
-
-import os
-import sys
-
 from PIL import Image, ImageDraw, ImageFont
 
-# create an image
-def create_image(filename):
-    """
-    Create image
-    """
+# Define the logo size and background color
+logo_width = 400
+logo_height = 400
+background_color = (45, 118, 187)  # Dark blue: #2D76BB
 
-    out = Image.new("RGBA", (600, 600), (0, 0, 0, 0))
-    # get a font
-    fnt = ImageFont.truetype(filename, 100)
-    print(filename)
-    # get a drawing context
-    d = ImageDraw.Draw(out)
+# Create a new image with the specified dimensions and background color
+logo_image = Image.new("RGB", (logo_width, logo_height), background_color)
 
-    # https://www.geeksforgeeks.org/python-pil-imagedraw-draw-rectangle/
-    w, h = 500, 50
-    shape = [(40, 40), (w - 10, h - 10)]
-    # d.rectangle(shape, fill=(255, 255, 255, 0), outline="white")
+# Set up the drawing context
+draw = ImageDraw.Draw(logo_image)
 
-    # draw multiline text
-    # White text
-    # d.multiline_text((15, -15), "ACLARKNET", font=fnt, fill=(255, 255, 255))
-    # Black text
-    d.multiline_text((20, 220), "ACLARK.NET", font=fnt, fill=(0, 0, 0))
+# Define the text and font for the logo
+text = "ACLARK.NET, LLC"
+font_size = 40  # Adjust as desired to shrink the text
+font_color = (255, 255, 255)  # White
 
-    fontname = filename.split(".")[0]  # Remove file extension
-    out.save("logo_NotoSans-Regular.png", "PNG")
+# Load the Arial font and calculate the text size
+font = ImageFont.truetype("Arial.ttf", font_size)
 
+text_width, text_height = draw.textsize(text, font=font)
 
-if __name__ == "__main__":
+# Calculate the position to center the text on the logo
+text_x = (logo_width - text_width) // 2
+text_y = (logo_height - text_height) // 2
 
-    # files = [f for f in os.listdir(".") if f.endswith("ttf")]
-    # for filename in files:
+# Calculate the dimensions for the rectangle
+padding_x = 20
+padding_y = 10
+rectangle_width = text_width + (2 * padding_x)
+rectangle_height = text_height + (2 * padding_y)
 
-    create_image("NotoSans-Regular.ttf")
+# Calculate the position to center the rectangle around the text
+rectangle_x = text_x - padding_x
+rectangle_y = text_y - padding_y
+
+# Draw the rectangle
+rectangle_coords = [
+    (rectangle_x, rectangle_y),
+    (rectangle_x + rectangle_width, rectangle_y + rectangle_height),
+]
+border_color = (255, 255, 255)  # White
+border_width = 2  # Adjust as desired
+draw.rectangle(rectangle_coords, outline=border_color, width=border_width)
+
+# Draw the text on the logo
+draw.text((text_x, text_y), text, font=font, fill=font_color)
+
+# Save the logo as a PNG image
+logo_image.save("aclarknet.png")
