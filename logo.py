@@ -19,7 +19,9 @@ font_color = (255, 255, 255)  # White
 # Load the Arial font and calculate the text size
 font = ImageFont.truetype("Arial.ttf", font_size)
 
-text_width, text_height = draw.textsize(text, font=font)
+# https://stackoverflow.com/a/77074371/185820
+text_width = draw.textlength(text, font=font)
+text_height = font_size
 
 # Calculate the position to center the text on the logo
 text_x = (logo_width - text_width) // 2
