@@ -4,30 +4,8 @@
 #
 # https://github.com/project-makefile/project-makefile
 
-# License
-#
-# Copyright 2016—2024 Jeffrey A. Clark (Alex)
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
 # --------------------------------------------------------------------------------
-# Variables
+# Variables (override)
 # --------------------------------------------------------------------------------
 
 .DEFAULT_GOAL := git-commit-push
@@ -39,58 +17,59 @@ TMPDIR := $(shell mktemp -d)
 PROJECT_EMAIL := aclark@aclark.net
 PROJECT_MAKEFILE := project.mk
 PROJECT_NAME = project-makefile
+PROJECT_DIRS = backend contactpage home privacy siteuser
+
+WAGTAIL_CLEAN_DIRS = home search backend sitepage siteuser privacy frontend contactpage modelformtest
+WAGTAIL_CLEAN_FILES = README.rst .dockerignore Dockerfile manage.py requirements.txt
+
+REVIEW_EDITOR = subl
+
+GIT_BRANCHES = $(shell git branch -a | grep remote | grep -v HEAD | grep -v main |\
+    grep -v master)
+GIT_MESSAGE = "Update $(PROJECT_NAME)"
+GIT_COMMIT = git commit -a -m $(GIT_MESSAGE)
+GIT_PUSH = git push
+
+GET_DATABASE_URL = eb ssh -c "source /opt/elasticbeanstalk/deployment/custom_env_var;\
+    env | grep DATABASE_URL"
+DATABASE_AWK = awk -F\= '{print $$2}'
+DATABASE_HOST = $(shell $(GET_DATABASE_URL) | $(DATABASE_AWK) |\
+    python -c 'import dj_database_url; url = input(); url = dj_database_url.parse(url); print(url["HOST"])')
+DATABASE_NAME = $(shell $(GET_DATABASE_URL) | $(DATABASE_AWK) |\
+    python -c 'import dj_database_url; url = input(); url = dj_database_url.parse(url); print(url["NAME"])')
+DATABASE_PASS = $(shell $(GET_DATABASE_URL) | $(DATABASE_AWK) |\
+    python -c 'import dj_database_url; url = input(); url = dj_database_url.parse(url); print(url["PASSWORD"])')
+DATABASE_USER = $(shell $(GET_DATABASE_URL) | $(DATABASE_AWK) |\
+    python -c 'import dj_database_url; url = input(); url = dj_database_url.parse(url); print(url["USER"])')
+
+ENV_NAME ?= $(PROJECT_NAME)-$(GIT_BRANCH)-$(GIT_REV)
+INSTANCE_MAX ?= 1
+INSTANCE_MIN ?= 1
+INSTANCE_TYPE ?= t4g.small
+INSTANCE_PROFILE ?= aws-elasticbeanstalk-ec2-role
+PLATFORM ?= "Python 3.11 running on 64bit Amazon Linux 2023"
+LB_TYPE ?= application
 
 ifneq ($(wildcard $(PROJECT_MAKEFILE)),)
     include $(PROJECT_MAKEFILE)
 endif
 
-REVIEW_EDITOR := subl
+# --------------------------------------------------------------------------------
+# Variables (no override)
+# --------------------------------------------------------------------------------
 
-GIT_BRANCHES = `git branch -a \
-	| grep remote  \
-	| grep -v HEAD \
-	| grep -v main \
-	| grep -v master`
-GIT_MESSAGE = "Update $(PROJECT_NAME)"
-GIT_COMMIT = git commit -a -m $(GIT_MESSAGE)
-GIT_PUSH = git push
-GIT_REV := `git rev-parse --short HEAD`
-
-ENV_NAME ?= $(PROJECT_NAME)-$(GIT_REV)
-INSTANCE_TYPE ?= t4g.small
-PLATFORM ?= "Python 3.11 running on 64bit Amazon Linux 2023"
-LB_TYPE ?= application
+GIT_REV := $(shell git rev-parse --short HEAD)
+GIT_BRANCH := $(shell git branch --show-current)
 
 ADD_DIR := mkdir -pv
+ADD_FILE := touch
 COPY_DIR := cp -rv
 COPY_FILE := cp -v
 DEL_DIR := rm -rv
 DEL_FILE := rm -v
 GIT_ADD := git add
 
-DATABASE_ENV_VAR = DATABASE_URL
-
-COMMAND = "source /opt/elasticbeanstalk/deployment/custom_env_var; env | grep $(DATABASE_ENV_VAR)"
-
-DATABASE_HOST = $(shell eb ssh -c $(COMMAND) | awk -F\= '{print $$2}' | python -c 'import dj_database_url; url = input(); url = dj_database_url.parse(url); print(url["HOST"])')
-
-DATABASE_PASSWORD = `eb ssh -c "source /opt/elasticbeanstalk/deployment/custom_env_var; env | grep $(DATABASE_ENV_VAR)" | \
-	awk -F\= '{print $$2}' | \
-	python -c 'import dj_database_url; url = input(); \
-	url = dj_database_url.parse(url); \
-	print(url["PASSWORD"])'`
-
-DATABASE_USER = `eb ssh -c "source /opt/elasticbeanstalk/deployment/custom_env_var; env | grep $(DATABASE_ENV_VAR)" | \
-	awk -F\= '{print $$2}' | \
-	python -c 'import dj_database_url; url = input(); \
-	url = dj_database_url.parse(url); \
-	print(url["USER"])'`
-
-DATABASE_NAME = `eb ssh -c "source /opt/elasticbeanstalk/deployment/custom_env_var; env | grep $(DATABASE_ENV_VAR)" | \
-	awk -F\= '{print $$2}' | \
-	python -c 'import dj_database_url; url = input(); \
-	url = dj_database_url.parse(url); \
-	print(url["NAME"])'`
+ENSURE_PIP := python -m ensurepip
 
 # --------------------------------------------------------------------------------
 # Multi-line variables
@@ -269,6 +248,38 @@ define BLOCK_MARKETING
 </div>
 endef
 
+define CONTACT_PAGE_TEST
+from wagtail.models import Page, Site
+from wagtail.rich_text import RichText
+from wagtail.test.utils import WagtailPageTestCase
+
+from home.models import HomePage
+from contactpage.models import ContactPage 
+
+
+class ContactPageTest(WagtailPageTestCase):
+    @classmethod
+    def setUpTestData(cls):
+        root = Page.get_first_root_node()
+        Site.objects.create(
+            hostname="testserver",
+            root_page=root,
+            is_default_site=True,
+            site_name="testserver",
+        )
+        home = HomePage(title="Home")
+        root.add_child(instance=home)
+        cls.page = ContactPage(
+            title="Contact Us",
+            slug="contact-us",
+        )
+        home.add_child(instance=cls.page)
+
+    def test_get(self):
+        response = self.client.get(self.page.url)
+        self.assertEqual(response.status_code, 200)
+endef
+
 define COMPONENT_CLOCK
 // Via ChatGPT
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -372,6 +383,7 @@ const UserMenu = ({ isAuthenticated, isSuperuser, textColor }) => {
           </a>
           <ul className="dropdown-menu">
             <li><a className="dropdown-item" href="/user/profile">Profile</a></li>
+            <li><a className="dropdown-item" href="/modelformtest/test-models">Model Form Test</a></li>
             {isSuperuser ? (
               <>
                 <li><hr className="dropdown-divider"></hr></li>
@@ -528,47 +540,22 @@ define CONTACT_PAGE_LANDING
 {% block content %}<div class="container"><h1>Thank you!</h1></div>{% endblock %}
 endef
 
-define DOCKER_FILE
-FROM node:20-alpine as build-node
-FROM python:3.12-bullseye as build-python
+define DOCKERFILE
+FROM amazonlinux:2023
+RUN dnf install -y shadow-utils python3.11 python3.11-pip make nodejs20-npm nodejs
 RUN useradd wagtail
 EXPOSE 8000
-ENV PYTHONUNBUFFERED=1 \
-    PORT=8000
-RUN curl -fsSL https://deb.nodesource.com/setup_21.x | bash - 
-RUN apt-get update --yes --quiet && apt-get install --yes --quiet --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    libjpeg62-turbo-dev \
-    zlib1g-dev \
-    libwebp-dev \
-    nodejs \
- && rm -rf /var/lib/apt/lists/*
-RUN pip install -U pip
+ENV PYTHONUNBUFFERED=1 PORT=8000
 COPY requirements.txt /
-RUN pip install -r /requirements.txt
+RUN python3.11 -m pip install -r /requirements.txt
 WORKDIR /app
 RUN chown wagtail:wagtail /app
 COPY --chown=wagtail:wagtail . .
-RUN make django-npm-install django-npm-build
-RUN python manage.py collectstatic --noinput --clear
+USER wagtail
+RUN cd frontend; npm-20 install; npm-20 run build
+RUN python3.11 manage.py collectstatic --noinput --clear
 CMD set -xe; python manage.py migrate --noinput; gunicorn backend.wsgi:application
 endef
-
-define GIT_IGNORE
-bin/
-__pycache__
-lib/
-lib64
-pyvenv.cfg
-node_modules/
-share/
-static/
-media/
-.elasticbeanstalk/
-dist/
-endef
-
 
 define INTERNAL_IPS
 INTERNAL_IPS = ["127.0.0.1",]
@@ -688,36 +675,8 @@ define HOME_PAGE_TEMPLATE
 {% endblock %}
 endef
 
-define CONTACT_PAGE_TEST
-from wagtail.models import Page, Site
-from wagtail.rich_text import RichText
-from wagtail.test.utils import WagtailPageTestCase
-
-from home.models import HomePage
-from contactpage.models import ContactPage 
-
-
-class ContactPageTest(WagtailPageTestCase):
-    @classmethod
-    def setUpTestData(cls):
-        root = Page.get_first_root_node()
-        Site.objects.create(
-            hostname="testserver",
-            root_page=root,
-            is_default_site=True,
-            site_name="testserver",
-        )
-        home = HomePage(title="Home")
-        root.add_child(instance=home)
-        cls.page = ContactPage(
-            title="Contact Us",
-            slug="contact-us",
-        )
-        home.add_child(instance=cls.page)
-
-    def test_get(self):
-        response = self.client.get(self.page.url)
-        self.assertEqual(response.status_code, 200)
+define INDEX_HTML
+<h1>Hello world</h1>
 endef
 
 define JENKINS_FILE
@@ -744,13 +703,50 @@ class SitePage(Page):
         verbose_name = "Site Page"
 endef
 
+define SEARCH_TEMPLATE
+{% extends "base.html" %}
+{% load static wagtailcore_tags %}
+{% block body_class %}template-searchresults{% endblock %}
+{% block title %}Search{% endblock %}
+{% block content %}
+    <h1>Search</h1>
+    <form action="{% url 'search' %}" method="get">
+        <input type="text"
+               name="query"
+               {% if search_query %}value="{{ search_query }}"{% endif %}>
+        <input type="submit" value="Search" class="button">
+    </form>
+    {% if search_results %}
+        <ul>
+            {% for result in search_results %}
+                <li>
+                    <h4>
+                        <a href="{% pageurl result %}">{{ result }}</a>
+                    </h4>
+                    {% if result.search_description %}{{ result.search_description }}{% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+        {% if search_results.has_previous %}
+            <a href="{% url 'search' %}?query={{ search_query|urlencode }}&amp;page={{ search_results.previous_page_number }}">Previous</a>
+        {% endif %}
+        {% if search_results.has_next %}
+            <a href="{% url 'search' %}?query={{ search_query|urlencode }}&amp;page={{ search_results.next_page_number }}">Next</a>
+        {% endif %}
+    {% elif search_query %}
+        No results found
+	{% else %}
+		No results found. Try a <a href="?query=test">test query</a>?
+    {% endif %}
+{% endblock %}
+endef
 
 define SEARCH_URLS
 from django.urls import path
 from .views import search
 
 urlpatterns = [
-	path("", search, name="search")
+    path("", search, name="search")
 ]
 endef
 
@@ -785,6 +781,7 @@ urlpatterns = [
     path('wagtail/', include(wagtailadmin_urls)),
     path('user/', include('siteuser.urls')),
     path('search/', include('search.urls')),
+    path('modelformtest/', include('modelformtest.urls')),
 ]
 
 if settings.DEBUG:
@@ -821,7 +818,7 @@ urlpatterns += [
 ]
 
 urlpatterns += [
-	path("hijack/", include("hijack.urls")),
+    path("hijack/", include("hijack.urls")),
 ]
 
 urlpatterns += [
@@ -1030,6 +1027,13 @@ const App = () => (
 root.render(<App />);
 endef
 
+define GIT_IGNORE
+__pycache__
+*.pyc
+dist/
+node_modules/
+_build/
+endef
 
 define HTML_FOOTER
 {% load wagtailcore_tags %}
@@ -1072,7 +1076,7 @@ define HTML_HEADER
                     </li>
                     {% for child in current_site.root_page.get_children %}
                         {% if child.show_in_menus %}
-			                <li class="nav-item">
+                            <li class="nav-item">
                                 <a class="nav-link {% if request.path == child.url %}active{% endif %}" aria-current="page"
                                     href="{{ child.url }}">{{ child }}</a>
                             </li>
@@ -1138,6 +1142,132 @@ define HTML_OFFCANVAS
 </div>
 endef
 
+define MODEL_FORM_TEST_MODEL
+from django.db import models
+from django.shortcuts import reverse
+
+class TestModel(models.Model):
+    name = models.CharField(max_length=100, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+    age = models.IntegerField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name or f"test-model-{self.pk}"
+
+    def get_absolute_url(self):
+        return reverse('test_model_detail', kwargs={'pk': self.pk})
+endef
+
+define MODEL_FORM_TEST_ADMIN
+from django.contrib import admin
+from .models import TestModel
+
+@admin.register(TestModel)
+class TestModelAdmin(admin.ModelAdmin):
+    pass
+endef
+
+define MODEL_FORM_TEST_VIEWS
+from django.views.generic import ListView, CreateView, UpdateView, DetailView
+from .models import TestModel
+from .forms import TestModelForm
+
+
+class TestModelListView(ListView):
+    model = TestModel
+    template_name = "test_model_list.html"
+    context_object_name = "test_models"
+
+
+class TestModelCreateView(CreateView):
+    model = TestModel
+    form_class = TestModelForm
+    template_name = "test_model_form.html"
+
+    def form_valid(self, form):
+        form.instance.created_by = self.request.user
+        return super().form_valid(form)
+
+
+class TestModelUpdateView(UpdateView):
+    model = TestModel
+    form_class = TestModelForm
+    template_name = "test_model_form.html"
+
+
+class TestModelDetailView(DetailView):
+    model = TestModel
+    template_name = "test_model_detail.html"
+    context_object_name = "test_model"
+endef
+
+define MODEL_FORM_TEST_FORMS
+from django import forms
+from .models import TestModel
+
+class TestModelForm(forms.ModelForm):
+    class Meta:
+        model = TestModel
+        fields = ['name', 'email', 'age', 'is_active']  # Add or remove fields as needed
+endef
+
+define MODEL_FORM_TEST_TEMPLATE_FORM
+{% extends 'base.html' %}
+{% block content %}
+    <h1>{% if form.instance.pk %}Update Test Model{% else %}Create Test Model{% endif %}</h1>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Save</button>
+    </form>
+{% endblock %}
+endef
+
+define MODEL_FORM_TEST_TEMPLATE_DETAIL
+{% extends 'base.html' %}
+{% block content %}
+    <h1>Test Model Detail: {{ test_model.name }}</h1>
+    <p>Name: {{ test_model.name }}</p>
+    <p>Email: {{ test_model.email }}</p>
+    <p>Age: {{ test_model.age }}</p>
+    <p>Active: {{ test_model.is_active }}</p>
+    <p>Created At: {{ test_model.created_at }}</p>
+    <a href="{% url 'test_model_update' test_model.pk %}">Edit Test Model</a>
+{% endblock %}
+endef
+
+define MODEL_FORM_TEST_TEMPLATE_LIST
+{% extends 'base.html' %}
+{% block content %}
+    <h1>Test Models List</h1>
+    <ul>
+        {% for test_model in test_models %}
+            <li><a href="{% url 'test_model_detail' test_model.pk %}">{{ test_model.name }}</a></li>
+        {% endfor %}
+    </ul>
+    <a href="{% url 'test_model_create' %}">Create New Test Model</a>
+{% endblock %}
+endef
+
+define MODEL_FORM_TEST_URLS
+from django.urls import path
+from .views import (
+    TestModelListView,
+    TestModelCreateView,
+    TestModelUpdateView,
+    TestModelDetailView,
+)
+
+urlpatterns = [
+    path('test-models/', TestModelListView.as_view(), name='test_model_list'),
+    path('test-models/create/', TestModelCreateView.as_view(), name='test_model_create'),
+    path('test-models/<int:pk>/update/', TestModelUpdateView.as_view(), name='test_model_update'),
+    path('test-models/<int:pk>/', TestModelDetailView.as_view(), name='test_model_detail'),
+]
+endef
+
 define PRIVACY_PAGE_MODEL
 from wagtail.models import Page
 from wagtail.admin.panels import FieldPanel
@@ -1167,6 +1297,20 @@ define PRIVACY_PAGE_TEMPLATE
 {% block content %}<div class="container">{{ page.body|markdown }}</div>{% endblock %}
 endef
 
+define REQUIREMENTS_TEST
+pytest
+pytest-runner
+coverage
+pytest-mock
+pytest-cov
+hypothesis
+selenium
+pytest-django
+factory-boy
+flake8
+tox
+endef
+
 define SITEUSER_FORM
 from django import forms
 from django.contrib.auth.forms import UserChangeForm
@@ -1175,9 +1319,9 @@ from .models import User
 class SiteUserForm(UserChangeForm):
     class Meta(UserChangeForm.Meta):
         model = User
+        fields = ("username", "user_theme_preference", "bio", "rate")
 
-    # Override the widget for the bio field
-    bio = forms.CharField(widget=forms.Textarea(attrs={'id': 'editor'}))
+    bio = forms.CharField(widget=forms.Textarea(attrs={"id": "editor"}), required=False)
 endef
 
 define SITEUSER_MODEL
@@ -1194,6 +1338,7 @@ class User(AbstractUser):
     user_theme_preference = models.CharField(max_length=10, choices=settings.THEMES, default='light')
     
     bio = models.TextField(blank=True, null=True)
+    rate = models.FloatField(blank=True, null=True)
 endef
 
 define SETTINGS_THEMES
@@ -1214,13 +1359,12 @@ endef
 
 define SITEUSER_EDIT_TEMPLATE
 {% extends 'base.html' %}
-{% load crispy_forms_tags %}
 
 {% block content %}
   <h2>Edit User</h2>
   <form method="post">
     {% csrf_token %}
-    {{ form.as_p }}
+    {{ form }}
     <div class="d-flex">
       <button type="submit">Save changes</button>
       <a class="text-decoration-none" href="/user/profile">Cancel</a>
@@ -1234,14 +1378,13 @@ define SITEUSER_VIEW_TEMPLATE
 
 {% block content %}
 <h2>User Profile</h2>
-<ul class="nav justify-content-end">
-  <li class="nav-item">
-    <a class="nav-link active border rounded" aria-current="page" href="{% url 'user-edit' pk=user.id %}">Edit</a>
-  </li>
-</ul>
+<div class="d-flex justify-content-end">
+    <a class="btn btn-outline-secondary" href="{% url 'user-edit' pk=user.id %}">Edit</a>
+</div>
 <p>Username: {{ user.username }}</p>
 <p>Theme: {{ user.user_theme_preference }}</p>
-<p>Bio: {{ user.bio|default:"" }}</p>
+<p>Bio: {{ user.bio|default:""|safe }}</p>
+<p>Rate: {{ user.rate|default:"" }}</p>
 {% endblock %}
 endef
 
@@ -1275,19 +1418,10 @@ class UpdateThemePreferenceView(View):
         try:
             data = json.loads(request.body.decode("utf-8"))
             new_theme = data.get("theme")
-
-            # Perform the logic to update the theme preference in your database or storage
-
-            # Assuming you have a logged-in user, get the user instance
             user = request.user
-
-            # Update the user's theme preference
             user.user_theme_preference = new_theme
             user.save()
-
-            # For demonstration purposes, we'll just return the updated theme in the response
             response_data = {"theme": new_theme}
-
             return JsonResponse(response_data)
         except json.JSONDecodeError as e:
             return JsonResponse({"error": e}, status=400)
@@ -1423,6 +1557,33 @@ module.exports = {
 };
 endef
 
+define WEBPACK_REVEAL_CONFIG_JS
+const path = require('path');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+
+module.exports = {
+  mode: 'development',
+  entry: './src/index.js',
+  output: {
+    filename: 'bundle.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+  module: {
+    rules: [
+      {
+        test: /\.css$$/,
+        use: [MiniCssExtractPlugin.loader, 'css-loader'],
+      },
+    ],
+  },
+  plugins: [
+    new MiniCssExtractPlugin({
+      filename: 'bundle.css',
+    }),
+  ],
+};
+endef
+
 define WEBPACK_INDEX_HTML
 <!DOCTYPE html>
 <html lang="en">
@@ -1437,9 +1598,40 @@ define WEBPACK_INDEX_HTML
 </html>
 endef
 
+define WEBPACK_REVEAL_INDEX_HTML
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Project Makefile</title>
+        <link rel="stylesheet" href="dist/bundle.css">
+    </head>
+    <div class="reveal">
+        <div class="slides">
+            <section>
+                Slide 1: Draw some circles
+            </section>
+            <section>
+                Slide 2: Draw the rest of the owl
+            </section>
+        </div>
+    </div>
+    <script src="dist/bundle.js"></script>
+</html>
+endef
+
 define WEBPACK_INDEX_JS
 const message = "Hello, World!";
 console.log(message);
+endef
+
+define WEBPACK_REVEAL_INDEX_JS
+import 'reveal.js/dist/reveal.css';
+import 'reveal.js/dist/theme/black.css';
+import Reveal from 'reveal.js';
+import RevealNotes from 'reveal.js/plugin/notes/notes.js';
+Reveal.initialize({ slideNumber: true, plugins: [ RevealNotes ]});
 endef
 
 # ------------------------------------------------------------------------------  
@@ -1460,7 +1652,7 @@ export CONTACT_PAGE_MODEL
 export CONTACT_PAGE_TEMPLATE
 export CONTACT_PAGE_LANDING
 export CONTACT_PAGE_TEST
-export DOCKER_FILE
+export DOCKERFILE
 export ESLINTRC
 export FAVICON_TEMPLATE
 export FRONTEND_APP
@@ -1474,14 +1666,24 @@ export HOME_PAGE_TEMPLATE
 export HTML_FOOTER
 export HTML_HEADER
 export HTML_OFFCANVAS
+export INDEX_HTML
 export INTERNAL_IPS
 export JENKINS_FILE
+export MODEL_FORM_TEST_ADMIN
+export MODEL_FORM_TEST_FORMS
+export MODEL_FORM_TEST_MODEL
+export MODEL_FORM_TEST_URLS
+export MODEL_FORM_TEST_VIEWS
+export MODEL_FORM_TEST_TEMPLATE_DETAIL
+export MODEL_FORM_TEST_TEMPLATE_FORM
+export MODEL_FORM_TEST_TEMPLATE_LIST
 export PRIVACY_PAGE_MODEL
 export REST_FRAMEWORK
 export FRONTEND_CONTEXT_INDEX
 export FRONTEND_CONTEXT_USER_PROVIDER
 export PRIVACY_PAGE_MODEL
 export PRIVACY_PAGE_TEMPLATE
+export REQUIREMENTS_TEST
 export SETTINGS_THEMES
 export SITEPAGE_MODEL
 export SITEPAGE_TEMPLATE
@@ -1492,6 +1694,7 @@ export SITEUSER_URLS
 export SITEUSER_VIEW
 export SITEUSER_VIEW_TEMPLATE
 export SITEUSER_EDIT_TEMPLATE
+export SEARCH_TEMPLATE
 export SEARCH_URLS
 export THEME_BLUE
 export THEME_TOGGLER
@@ -1499,25 +1702,28 @@ export TINYMCE_JS
 export WEBPACK_CONFIG_JS
 export WEBPACK_INDEX_HTML
 export WEBPACK_INDEX_JS
+export WEBPACK_REVEAL_CONFIG_JS
+export WEBPACK_REVEAL_INDEX_HTML
+export WEBPACK_REVEAL_INDEX_JS
 
 # ------------------------------------------------------------------------------  
 # Rules
 # ------------------------------------------------------------------------------  
+
+aws-ssm-default:
+ifdef AWS_PROFILE
+	@echo "Environment variable is set: $(AWS_PROFILE)"
+	aws ssm describeparameters | cat
+	@echo "Get parameter values with: aws ssm getparameter --name <Name>."
+else
+	@echo "Environment variable not set. Set AWS_PROFILE before running this target."
+endif
 
 docker-build-default:
 	docker build -t $(PROJECT_NAME) .
 
 docker-serve-default:
 	docker run -p 8000:8000 $(PROJECT_NAME)
-
-export-base-default:
-	@echo "$$BASE_TEMPLATE"
-
-export-home-default:
-	@echo "$$HOME_PAGE_TEMPLATE"
-
-export-header-default:
-	@echo "$$HTML_HEADER"
 
 eb-check-env-default:  # https://stackoverflow.com/a/4731504/185820
 ifndef SSH_KEY
@@ -1538,6 +1744,9 @@ endif
 
 eb-create-default: eb-check-env
 	eb create $(ENV_NAME) \
+         -im $(INSTANCE_MIN) \
+         -ix $(INSTANCE_MAX) \
+         -ip $(INSTANCE_PROFILE) \
          -i $(INSTANCE_TYPE) \
          -k $(SSH_KEY) \
          -p $(PLATFORM) \
@@ -1545,6 +1754,7 @@ eb-create-default: eb-check-env
          --vpc \
          --vpc.id $(VPC_ID) \
          --vpc.elbpublic \
+         --vpc.publicip \
          --vpc.ec2subnets $(VPC_SUBNET_EC2) \
          --vpc.elbsubnets $(VPC_SUBNET_ELB) \
          --vpc.securitygroups $(VPC_SG)
@@ -1553,7 +1763,10 @@ eb-deploy-default:
 	eb deploy
 
 eb-restart-default:
-	systemctl restart web
+	eb ssh -c "systemctl restart web"
+
+eb-upgrade-default:
+	eb upgrade
 
 eb-init-default:
 	eb init
@@ -1562,11 +1775,12 @@ eb-list-platforms-default:
 	aws elasticbeanstalk list-platform-versions
 
 eb-logs-default:
-	eb ssh -c "cat /var/log/eb-engine.log"
+	eb logs
 
 npm-init-default:
 	npm init -y
 	$(GIT_ADD) package.json
+	-$(GIT_ADD) package-lock.json
 
 npm-build-default:
 	npm run build
@@ -1583,25 +1797,42 @@ npm-clean-default:
 npm-serve-default:
 	npm run start
 
-wagtail-contactpage-default:
-	python manage.py startapp contactpage
-	@echo "$$CONTACT_PAGE_MODEL" > contactpage/models.py
-	@echo "$$CONTACT_PAGE_TEST" > contactpage/tests.py
-	$(ADD_DIR) contactpage/templates/contactpage/
-	@echo "$$CONTACT_PAGE_TEMPLATE" > contactpage/templates/contactpage/contact_page.html
-	@echo "$$CONTACT_PAGE_LANDING" > contactpage/templates/contactpage/contact_page_landing.html
-	@echo "INSTALLED_APPS.append('contactpage')" >> $(SETTINGS)
-	python manage.py makemigrations contactpage
-	$(GIT_ADD) contactpage/
+db-mysql-init-default:
+	-mysqladmin -u root drop $(PROJECT_NAME)
+	-mysqladmin -u root create $(PROJECT_NAME)
 
-wagtail-sitepage-default:
-	python manage.py startapp sitepage
-	@echo "$$SITEPAGE_MODEL" > sitepage/models.py
-	$(ADD_DIR) sitepage/templates/sitepage/
-	@echo "$$SITEPAGE_TEMPLATE" > sitepage/templates/sitepage/site_page.html
-	@echo "INSTALLED_APPS.append('sitepage')" >> $(SETTINGS)
-	python manage.py makemigrations sitepage
-	$(GIT_ADD) sitepage/
+db-pg-init-default:
+	-dropdb $(PROJECT_NAME)
+	-createdb $(PROJECT_NAME)
+
+db-pg-export-default:
+	@eb ssh --quiet -c "export PGPASSWORD=$(DATABASE_PASS); pg_dump -U $(DATABASE_USER) -h $(DATABASE_HOST) $(DATABASE_NAME)" > $(DATABASE_NAME).sql
+	@echo "Wrote $(DATABASE_NAME).sql"
+
+db-pg-import-default:
+	@psql $(DATABASE_NAME) < $(DATABASE_NAME).sql
+
+django-frontend-app-default: python-webpack-init
+	$(ADD_DIR) frontend/src/context
+	$(ADD_DIR) frontend/src/images
+	$(ADD_DIR) frontend/src/utils
+	@echo "$$COMPONENT_CLOCK" > frontend/src/components/Clock.js
+	@echo "$$COMPONENT_ERROR" > frontend/src/components/ErrorBoundary.js
+	@echo "$$FRONTEND_CONTEXT_INDEX" > frontend/src/context/index.js
+	@echo "$$FRONTEND_CONTEXT_USER_PROVIDER" > frontend/src/context/UserContextProvider.js
+	@echo "$$COMPONENT_USER_MENU" > frontend/src/components/UserMenu.js
+	@echo "$$FRONTEND_APP" > frontend/src/application/app.js
+	@echo "$$FRONTEND_APP_CONFIG" > frontend/src/application/config.js
+	@echo "$$FRONTEND_COMPONENTS" > frontend/src/components/index.js
+	@echo "$$FRONTEND_PORTAL" > frontend/src/dataComponents.js
+	@echo "$$FRONTEND_STYLES" > frontend/src/styles/index.scss
+	@echo "$$BABELRC" > frontend/.babelrc
+	@echo "$$ESLINTRC" > frontend/.eslintrc
+	@echo "$$THEME_BLUE" > frontend/src/styles/theme-blue.scss
+	@echo "$$THEME_TOGGLER" > frontend/src/utils/themeToggler.js
+	@echo "$$TINYMCE_JS" > frontend/src/utils/tinymce.js
+	-$(GIT_ADD) home
+	-$(GIT_ADD) frontend
 
 django-secret-default:
 	python -c "from secrets import token_urlsafe; print(token_urlsafe(50))"
@@ -1640,6 +1871,21 @@ django-migrations-default:
 django-migrations-show-default:
 	python manage.py showmigrations
 
+django-model-form-test-default:
+	python manage.py startapp modelformtest
+	@echo "$$MODEL_FORM_TEST_ADMIN" > modelformtest/admin.py
+	@echo "$$MODEL_FORM_TEST_FORMS" > modelformtest/forms.py
+	@echo "$$MODEL_FORM_TEST_MODEL" > modelformtest/models.py
+	@echo "$$MODEL_FORM_TEST_URLS" > modelformtest/urls.py
+	@echo "$$MODEL_FORM_TEST_VIEWS" > modelformtest/views.py
+	$(ADD_DIR) modelformtest/templates/modelformtest
+	@echo "$$MODEL_FORM_TEST_TEMPLATE_DETAIL" > modelformtest/templates/test_model_detail.html
+	@echo "$$MODEL_FORM_TEST_TEMPLATE_FORM" > modelformtest/templates/test_model_form.html
+	@echo "$$MODEL_FORM_TEST_TEMPLATE_LIST" > modelformtest/templates/modelformtest/testmodel_list.html
+	@echo "INSTALLED_APPS.append('modelformtest')" >> $(SETTINGS)
+	python manage.py makemigrations
+	$(GIT_ADD) modelformtest
+
 django-serve-default:
 	cd frontend; npm run watch &
 	python manage.py runserver 0.0.0.0:8000
@@ -1647,7 +1893,7 @@ django-serve-default:
 django-settings-default:
 	echo "# $(PROJECT_NAME)" >> $(SETTINGS)
 	echo "ALLOWED_HOSTS = ['*']" >> $(SETTINGS)
-	echo "import dj_database_url, os" >> $(SETTINGS)
+	echo "import dj_database_url  # noqa" >> $(SETTINGS)
 	echo "DATABASE_URL = os.environ.get('DATABASE_URL', \
          'postgres://$(DB_USER):$(DB_PASS)@$(DB_HOST):$(DB_PORT)/$(PROJECT_NAME)')" >> $(SETTINGS)
 	echo "DATABASES['default'] = dj_database_url.parse(DATABASE_URL)" >> $(SETTINGS)
@@ -1682,6 +1928,10 @@ django-settings-default:
 	echo "TEMPLATES[0]['OPTIONS']['context_processors'].append('wagtail.contrib.settings.context_processors.settings')" >> $(SETTINGS)
 	echo "TEMPLATES[0]['OPTIONS']['context_processors'].append('wagtailmenus.context_processors.wagtailmenus')">> $(SETTINGS)
 	echo "SILENCED_SYSTEM_CHECKS = ['django_recaptcha.recaptcha_test_key_error']" >> $(SETTINGS)
+
+django-crispy-default:
+	@echo "CRISPY_TEMPLATE_PACK = 'bootstrap5'" >> $(SETTINGS)
+	@echo "CRISPY_ALLOWED_TEMPLATE_PACKS = 'bootstrap5'" >> $(SETTINGS)
 
 django-shell-default:
 	python manage.py shell
@@ -1776,8 +2026,6 @@ gh-default:
 git-ignore-default:
 	echo "$$GIT_IGNORE" > .gitignore
 	$(GIT_ADD) .gitignore
-	-@git commit -a -m "Add .gitignore"
-	-@$(GIT_PUSH)
 
 git-branches-default:
 	-for i in $(GIT_BRANCHES) ; do \
@@ -1801,94 +2049,105 @@ git-set-upstream-default:
 git-commit-empty-default:
 	git commit --allow-empty -m "Empty-Commit"
 
-lint-black-default:
-	-black *.py
-	-black backend/*.py
-	-black backend/*/*.py
-	-git commit -a -m "A one time black event"
+help-default:
+	@for makefile in $(MAKEFILE_LIST); do \
+        $(MAKE) -pRrq -f $$makefile : 2>/dev/null \
+            | awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' \
+            | sort | egrep -v -e '^[^[:alnum:]]' -e '^$@$$' \
+            | xargs | tr ' ' '\n' \
+            | awk '{printf "%s\n", $$0}' ; done | less # http://stackoverflow.com/a/26339924
 
-lint-djlint-default:
-	-djlint --reformat *.html
-	-djlint --reformat backend/*.html
-	-djlint --reformat backend/*/*.html
-	-git commit -a -m "A one time djlint event"
+index-default:
+	@echo "$$INDEX_HTML" > index.html
 
-lint-flake-default:
-	-flake8 *.py
-	-flake8 backend/*.py
-	-flake8 backend/*/*.py
+jenkins-init-default:
+	@echo "$$JENKINS_FILE" > Jenkinsfile
 
-lint-isort-default:
-	-isort *.py
-	-isort backend/*.py
-	-isort backend/*/*.py
-	-git commit -a -m "A one time isort event"
+lint-default:
+	-ruff check -v --fix
+	-ruff format -v
+	-djlint --reformat --format-css --format-js .
 
-lint-ruff-default:
-	-ruff *.py
-	-ruff backend/*.py
-	-ruff backend/*/*.py
-	-git commit -a -m "A one time ruff event"
-
-db-mysql-init-default:
-	-mysqladmin -u root drop $(PROJECT_NAME)
-	-mysqladmin -u root create $(PROJECT_NAME)
-
-db-pg-init-default:
-	-dropdb $(PROJECT_NAME)
-	-createdb $(PROJECT_NAME)
-
-db-pg-export-default:
-	eb ssh --quiet -c "export PGPASSWORD=$(DATABASE_PASSWORD); pg_dump -U $(DATABASE_USER) -h $(DATABASE_HOST) $(DATABASE_NAME)" > $(DATABASE_NAME).sql
-	@echo "Wrote $(DATABASE_NAME).sql"
-
-db-pg-import-default:
-	@psql $(DATABASE_NAME) < $(DATABASE_NAME).sql
+make-default:
+	$(GIT_ADD) Makefile
+	-git commit Makefile -m "Add/update project-makefile files"
+	-git push
 
 pip-freeze-default:
-	pip3 freeze | sort > $(TMPDIR)/requirements.txt
+	$(ENSURE_PIP)
+	python -m pip freeze | sort > $(TMPDIR)/requirements.txt
 	mv -f $(TMPDIR)/requirements.txt .
-	$(GIT_ADD) requirements.txt
+	-$(GIT_ADD) requirements.txt
 
 pip-init-default:
 	touch requirements.txt
-	$(GIT_ADD) requirements.txt
+	-$(GIT_ADD) requirements.txt
+
+pip-init-test-default:
+	@echo "$$REQUIREMENTS_TEST" > requirements-test.txt
+	-$(GIT_ADD) requirements-test.txt
 
 pip-install-default:
+	$(ENSURE_PIP)
 	$(MAKE) pip-upgrade
-	pip3 install wheel
-	pip3 install -r requirements.txt
+	python -m pip install wheel
+	python -m pip install -r requirements.txt
 
 pip-install-dev-default:
-	pip3 install -r requirements-dev.txt
+	$(ENSURE_PIP)
+	python -m pip install -r requirements-dev.txt
 
 pip-install-test-default:
-	pip3 install -r requirements-test.txt
+	$(ENSURE_PIP)
+	python -m pip install -r requirements-test.txt
 
 pip-install-upgrade-default:
 	cat requirements.txt | awk -F\= '{print $$1}' > $(TMPDIR)/requirements.txt
 	mv -f $(TMPDIR)/requirements.txt .
-	pip3 install -U -r requirements.txt
-	pip3 freeze | sort > $(TMPDIR)/requirements.txt
+	$(ENSURE_PIP)
+	python -m pip install -U -r requirements.txt
+	python -m pip freeze | sort > $(TMPDIR)/requirements.txt
 	mv -f $(TMPDIR)/requirements.txt .
 
 pip-upgrade-default:
-	pip3 install -U pip
+	$(ENSURE_PIP)
+	python -m pip install -U pip
 
 pip-uninstall-default:
-	pip3 freeze | xargs pip3 uninstall -y
+	$(ENSURE_PIP)
+	python -m pip freeze | xargs python -m pip uninstall -y
+
+project-mk-default:
+	touch project.mk
+	$(GIT_ADD) project.mk
+
+python-serve-default:
+	@echo "\n\tServing HTTP on http://0.0.0.0:8000\n"
+	python3 -m http.server
 
 python-setup-sdist-default:
 	python3 setup.py sdist --format=zip
 
-readme-init-default:
+python-webpack-init-default:
+	python manage.py webpack_init --no-input
+
+rand-default:
+	@openssl rand -base64 12 | sed 's/\///g'
+
+readme-init-rst-default:
 	@echo "$(PROJECT_NAME)" > README.rst
 	@echo "================================================================================" >> README.rst
 	-@git add README.rst
-	-git commit -a -m "Add readme"
 
-readme-edit-default:
+readme-init-md-default:
+	@echo "# $(PROJECT_NAME)" > README.md
+	-@git add README.md
+
+readme-edit-rst-default:
 	vi README.rst
+
+readme-edit-md-default:
+	vi README.md
 
 readme-open-default:
 	open README.pdf
@@ -1896,17 +2155,63 @@ readme-open-default:
 readme-build-default:
 	rst2pdf README.rst
 
-sphinx-init-default:
-	$(MAKE) sphinx-install
+reveal-build-default:
+	npm run build
+
+reveal-init-default: webpack-reveal-init
+	npm install \
+       css-loader \
+       mini-css-extract-plugin \
+       reveal.js \
+       style-loader
+	jq '.scripts += {"build": "webpack"}' package.json > \
+        $(TMPDIR)/tmp.json && mv $(TMPDIR)/tmp.json package.json
+	jq '.scripts += {"start": "webpack serve --mode development --port 8000 --static"}' package.json > \
+        $(TMPDIR)/tmp.json && mv $(TMPDIR)/tmp.json package.json
+	jq '.scripts += {"watch": "webpack watch --mode development"}' package.json > \
+        $(TMPDIR)/tmp.json && mv $(TMPDIR)/tmp.json package.json
+
+reveal-serve-default:
+	npm run watch &
+	python -m http.server
+
+sphinx-init-default: sphinx-install
 	sphinx-quickstart -q -p $(PROJECT_NAME) -a $(USER) -v 0.0.1 $(RANDIR)
-	mv $(RANDIR)/* .
-	rmdir $(RANDIR)
+	$(COPY_DIR) $(RANDIR)/* .
+	$(DEL_DIR) $(RANDIR)
+	$(GIT_ADD) index.rst
+	$(GIT_ADD) conf.py
+	$(DEL_FILE) make.bat
+	git checkout Makefile
+	$(MAKE) gitignore
+
+sphinx-theme-init-default:
+	export THEME_NAME=$(PROJECT_NAME)_theme; \
+	$(ADD_DIR) $$THEME_NAME ; \
+	$(ADD_FILE) $$THEME_NAME/__init__.py ; \
+	$(GIT_ADD) $$THEME_NAME/__init__.py ; \
+	$(ADD_FILE) $$THEME_NAME/theme.conf ; \
+	$(GIT_ADD) $$THEME_NAME/theme.conf ; \
+	$(ADD_FILE) $$THEME_NAME/layout.html ; \
+	$(GIT_ADD) $$THEME_NAME/layout.html ; \
+	$(ADD_DIR) $$THEME_NAME/static/css ; \
+	$(ADD_FILE) $$THEME_NAME/static/css/style.css ; \
+	$(ADD_DIR) $$THEME_NAME/static/js ; \
+	$(ADD_FILE) $$THEME_NAME/static/js/script.js ; \
+	$(GIT_ADD) $$THEME_NAME/static
+
+review-default:
+ifeq ($(UNAME), Darwin)
+	$(REVIEW_EDITOR) `find backend/ -name \*.py` `find backend/ -name \*.html` `find frontend/ -name \*.js` `find frontend/ -name \*.js`
+else
+	@echo "Unsupported"
+endif
 
 sphinx-install-default:
 	echo "Sphinx\n" > requirements.txt
 	@$(MAKE) pip-install
 	@$(MAKE) pip-freeze
-	$(GIT_ADD) requirements.txt
+	-$(GIT_ADD) requirements.txt
 
 sphinx-build-default:
 	sphinx-build -b html -d _build/doctrees . _build/html
@@ -1917,9 +2222,19 @@ sphinx-build-pdf-default:
 sphinx-serve-default:
 	cd _build/html;python3 -m http.server
 
+usage-default:
+	@echo "Project Makefile 🤷"
+	@echo "Usage: make [options] [target] ..."
+	@echo "Examples:"
+	@echo "   make help    Print all targets"
+	@echo "   make usage   Print this message"
+
 wagtail-search-urls:
 	@echo "$$SEARCH_URLS" > search/urls.py
 	$(GIT_ADD) search
+
+wagtail-search-template:
+	@echo "$$SEARCH_TEMPLATE" > search/templates/search/search.html
 
 wagtail-privacy-default:
 	python manage.py startapp privacy
@@ -1937,19 +2252,12 @@ wagtail-header-default:
 	@echo "$$HTML_HEADER" > backend/templates/header.html
 
 wagtail-clean-default:
-	-$(DEL_DIR) home
-	-$(DEL_DIR) search
-	-$(DEL_DIR) backend
-	-$(DEL_DIR) sitepage
-	-$(DEL_DIR) siteuser
-	-$(DEL_DIR) privacy
-	-$(DEL_DIR) frontend
-	-$(DEL_DIR) contactpage
-	-$(DEL_FILE) README.rst
-	-$(DEL_FILE) .dockerignore
-	-$(DEL_FILE) Dockerfile
-	-$(DEL_FILE) manage.py
-	-$(DEL_FILE) requirements.txt
+	-@for dir in "$(WAGTAIL_CLEAN_DIRS)"; do \
+		$(DEL_DIR) $$dir; \
+	done
+	-@for file in "$(WAGTAIL_CLEAN_FILES)"; do \
+		$(DEL_FILE) $$file; \
+	done
 
 wagtail-homepage-default:
 	@echo "$$HOME_PAGE_MODEL" > home/models.py
@@ -1957,52 +2265,27 @@ wagtail-homepage-default:
 	$(ADD_DIR) home/templates/blocks
 	@echo "$$BLOCK_MARKETING" > home/templates/blocks/marketing_block.html
 	@echo "$$BLOCK_CAROUSEL" > home/templates/blocks/carousel_block.html
-	$(GIT_ADD) home
+	-$(GIT_ADD) home
 
 wagtail-backend-templates-default:
+	$(ADD_DIR) backend/templates/allauth/layouts
+	@echo "$$ALLAUTH_LAYOUT_BASE" > backend/templates/allauth/layouts/base.html
 	@echo "$$BASE_TEMPLATE" > backend/templates/base.html
 	@echo "$$FAVICON_TEMPLATE" > backend/templates/favicon.html
 	@echo "$$HTML_HEADER" > backend/templates/header.html
 	@echo "$$HTML_FOOTER" > backend/templates/footer.html
 	@echo "$$HTML_OFFCANVAS" > backend/templates/offcanvas.html
-	$(ADD_DIR) backend/templates/allauth/layouts
-	@echo "$$ALLAUTH_LAYOUT_BASE" > backend/templates/allauth/layouts/base.html
 	$(GIT_ADD) backend/templates/
 
-django-frontend-app-default:
-	python manage.py webpack_init --no-input
-	@echo "$$COMPONENT_CLOCK" > frontend/src/components/Clock.js
-	@echo "$$COMPONENT_ERROR" > frontend/src/components/ErrorBoundary.js
-	$(ADD_DIR) frontend/src/context
-	$(ADD_DIR) frontend/src/images
-	@echo "$$FRONTEND_CONTEXT_INDEX" > frontend/src/context/index.js
-	@echo "$$FRONTEND_CONTEXT_USER_PROVIDER" > frontend/src/context/UserContextProvider.js
-	@echo "$$COMPONENT_USER_MENU" > frontend/src/components/UserMenu.js
-	@echo "$$FRONTEND_APP" > frontend/src/application/app.js
-	@echo "$$FRONTEND_APP_CONFIG" > frontend/src/application/config.js
-	@echo "$$FRONTEND_COMPONENTS" > frontend/src/components/index.js
-	@echo "$$FRONTEND_PORTAL" > frontend/src/dataComponents.js
-	@echo "$$FRONTEND_STYLES" > frontend/src/styles/index.scss
-	@echo "$$BABELRC" > frontend/.babelrc
-	@echo "$$ESLINTRC" > frontend/.eslintrc
-	@echo "$$THEME_BLUE" > frontend/src/styles/theme-blue.scss
-	$(ADD_DIR) frontend/src/utils/
-	@echo "$$THEME_TOGGLER" > frontend/src/utils/themeToggler.js
-	@echo "$$TINYMCE_JS" > frontend/src/utils/tinymce.js
-	$(GIT_ADD) frontend/src/utils/
-	$(GIT_ADD) home
-	$(GIT_ADD) frontend
-	-git commit -a -m "Add frontend"
-
-django-crispy-default:
-	@echo "CRISPY_TEMPLATE_PACK = 'bootstrap5'" >> $(SETTINGS)
-	@echo "CRISPY_ALLOWED_TEMPLATE_PACKS = 'bootstrap5'" >> $(SETTINGS)
-
-wagtail-init-default: db-init wagtail-install
+wagtail-start-default:
 	wagtail start backend .
-	$(MAKE) pip-freeze
+
+wagtail-init-default: db-init wagtail-install wagtail-start
+	@echo "$$DOCKERFILE" > Dockerfile
 	export SETTINGS=backend/settings/base.py DEV_SETTINGS=backend/settings/dev.py; \
 		$(MAKE) django-settings
+	export SETTINGS=backend/settings/base.py; \
+		$(MAKE) django-model-form-test
 	export URLS=urls.py; \
 		$(MAKE) django-url-patterns
 	$(GIT_ADD) backend
@@ -2011,6 +2294,7 @@ wagtail-init-default: db-init wagtail-install
 	$(GIT_ADD) Dockerfile
 	$(GIT_ADD) .dockerignore
 	$(MAKE) wagtail-homepage
+	$(MAKE) wagtail-search-template
 	$(MAKE) wagtail-search-urls
 	export SETTINGS=backend/settings/base.py; \
 		$(MAKE) django-siteuser
@@ -2030,24 +2314,25 @@ wagtail-init-default: db-init wagtail-install
 	@$(MAKE) django-npm-install
 	@$(MAKE) django-npm-install-save
 	@$(MAKE) django-npm-install-save-dev
-	@$(MAKE) lint-isort
-	@$(MAKE) lint-black
-	@$(MAKE) lint-flake
+	@$(MAKE) pip-init-test
 	@$(MAKE) readme
 	@$(MAKE) gitignore
+	@$(MAKE) freeze
 	@$(MAKE) serve
 
 wagtail-install-default:
-	pip3 install \
+	$(ENSURE_PIP)
+	python -m pip install \
         Faker \
-		boto3 \
+        boto3 \
         crispy-bootstrap5 \
         djangorestframework \
         django-allauth \
         django-after-response \
         django-ckeditor \
-        django-countries \
+        django-colorful \
         django-cors-headers \
+        django-countries \
         django-crispy-forms \
         django-debug-toolbar \
         django-extensions \
@@ -2056,29 +2341,33 @@ wagtail-install-default:
         django-imagekit \
         django-import-export \
         django-ipware \
-	 	django-multiselectfield \
+        django-multiselectfield \
         django-phonenumber-field \
         django-recurrence \
         django-recaptcha \
         django-registration \
         django-rest-auth \
         django-richtextfield \
+        django-sendgrid-v5 \
         django-social-share \
         django-storages \
         django-tables2 \
         django-timezone-field \
+		django-widget-tweaks \
         dj-database-url \
         dj-stripe \
         dj-rest-auth \
-		enmerkar \
-		gunicorn \
+        enmerkar \
+        gunicorn \
+        html2docx \
         icalendar \
         mailchimp-marketing \
         mailchimp-transactional \
         phonenumbers \
         psycopg2-binary \
         python-webpack-boilerplate \
-		reportlab \
+        python-docx \
+        reportlab \
         texttable \
         wagtail \
         wagtailmenus \
@@ -2087,115 +2376,108 @@ wagtail-install-default:
         wagtail-markdown \
         wagtail_modeladmin \
         wagtail-seo \
+        weasyprint \
         whitenoise \
-		xhtml2pdf 
-
-help-default:
-	@for makefile in $(MAKEFILE_LIST); do \
-        $(MAKE) -pRrq -f $$makefile : 2>/dev/null \
-            | awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' \
-            | sort | egrep -v -e '^[^[:alnum:]]' -e '^$@$$' \
-            | xargs | tr ' ' '\n' \
-            | awk '{printf "%s\n", $$0}' ; done | less # http://stackoverflow.com/a/26339924 Given a base.mk, Makefile and project.mk, and base.mk and project.mk included from Makefile, print target names from all makefiles.
-
-usage-default:
-	@echo "Project Makefile 🤷"
-	@echo "Usage: make [options] [target] ..."
-	@echo "Examples:"
-	@echo "   make help    Print all targets"
-	@echo "   make usage   Print this message"
-
-jenkins-init-default:
-	@echo "$$JENKINS_FILE" > Jenkinsfile
+        xhtml2pdf
 
 webpack-init-default: npm-init
 	@echo "$$WEBPACK_CONFIG_JS" > webpack.config.js
 	$(GIT_ADD) webpack.config.js
-	npm install --save-dev webpack webpack-cli
+	npm install --save-dev webpack webpack-cli webpack-dev-server
 	$(ADD_DIR) src/
 	@echo "$$WEBPACK_INDEX_JS" > src/index.js
 	$(GIT_ADD) src/index.js
 	@echo "$$WEBPACK_INDEX_HTML" > index.html
 	$(GIT_ADD) index.html
+	$(MAKE) gitignore
 
-make-default:
-	$(GIT_ADD) Makefile
-	-git commit -a -m "Add/update project-makefile files"
-	-git push
+webpack-reveal-init-default: npm-init
+	@echo "$$WEBPACK_REVEAL_CONFIG_JS" > webpack.config.js
+	$(GIT_ADD) webpack.config.js
+	npm install --save-dev webpack webpack-cli webpack-dev-server
+	$(ADD_DIR) src/
+	@echo "$$WEBPACK_REVEAL_INDEX_JS" > src/index.js
+	$(GIT_ADD) src/index.js
+	@echo "$$WEBPACK_REVEAL_INDEX_HTML" > index.html
+	$(GIT_ADD) index.html
+	$(MAKE) gitignore
 
-python-serve-default:
-	@echo "\n\tServing HTTP on http://0.0.0.0:8000\n"
-	python3 -m http.server
+wagtail-contactpage-default:
+	python manage.py startapp contactpage
+	@echo "$$CONTACT_PAGE_MODEL" > contactpage/models.py
+	@echo "$$CONTACT_PAGE_TEST" > contactpage/tests.py
+	$(ADD_DIR) contactpage/templates/contactpage/
+	@echo "$$CONTACT_PAGE_TEMPLATE" > contactpage/templates/contactpage/contact_page.html
+	@echo "$$CONTACT_PAGE_LANDING" > contactpage/templates/contactpage/contact_page_landing.html
+	@echo "INSTALLED_APPS.append('contactpage')" >> $(SETTINGS)
+	python manage.py makemigrations contactpage
+	$(GIT_ADD) contactpage/
 
-rand-default:
-	@openssl rand -base64 12 | sed 's/\///g'
-
-review-default:
-ifeq ($(UNAME), Darwin)
-	$(REVIEW_EDITOR) `find backend/ -name \*.py` `find backend/ -name \*.html` `find frontend/ -name \*.js` `find frontend/ -name \*.js`
-else
-	@echo "Unsupported"
-endif
-
-project-mk-default:
-	touch project.mk
-	$(GIT_ADD) project.mk
+wagtail-sitepage-default:
+	python manage.py startapp sitepage
+	@echo "$$SITEPAGE_MODEL" > sitepage/models.py
+	$(ADD_DIR) sitepage/templates/sitepage/
+	@echo "$$SITEPAGE_TEMPLATE" > sitepage/templates/sitepage/site_page.html
+	@echo "INSTALLED_APPS.append('sitepage')" >> $(SETTINGS)
+	python manage.py makemigrations sitepage
+	$(GIT_ADD) sitepage/
 
 # ------------------------------------------------------------------------------  
 # More rules
 # ------------------------------------------------------------------------------  
 
+b-default: build
 build-default: pip-install
-b-default: build 
-black-default: lint-black
 c-default: clean
 ce-default: git-commit-edit-push
 clean-default: wagtail-clean
 cp-default: git-commit-push
 d-default: deploy
-deploy-default: eb-deploy
 db-export-default: db-pg-export
 db-import-default: db-pg-import
 db-init-default: db-pg-init
+deploy-default: eb-deploy
 django-clean-default: wagtail-clean
 django-init-default: wagtail-init
 djlint-default: lint-djlint
-edit-default: readme-edit
 e-default: edit
+edit-default: readme-edit-md
 empty-default: git-commit-empty
 freeze-default: pip-freeze
+git-commit-edit-push-default: git-commit-edit git-push
+git-commit-push-default: git-commit git-push
+gitignore-default: git-ignore
 h-default: help
+i-default: install
 init-default: wagtail-init
 install-default: pip-install
 install-dev-default: pip-install-dev
 install-test-default: pip-install-test
-i-default: install
-lint-default: lint-djlint
+l-default: lint
 logs-default: eb-logs
 migrate-default: django-migrate
 migrations-default: django-migrations
 migrations-show-default: django-migrations-show
 mk-default: project-mk
-git-commit-edit-push-default: git-commit-edit git-push
-git-commit-push-default: git-commit git-push
-gitignore-default: git-ignore
-open-default: django-open
 o-default: open
+open-default: django-open
 p-default: git-push
 pack-default: django-npm-build
 pg-init-default: db-pg-init
-readme-default: readme-init
+readme-default: readme-init-md
 restart-default: eb-restart
+reveal-default: reveal-init
+s-default: serve
+sdist-default: python-setup-sdist
 secret-default: django-secret
 serve-default: django-serve
 shell-default: django-shell
 show-urls-default: django-show-urls
-su-default: django-su
-s-default: serve
 static-default: django-static
-sdist-default: python-setup-sdist
+su-default: django-su
 test-default: django-test
 u-default: usage
+up-default: eb-upgrade
 urls-default: django-show-urls
 webpack-default: webpack-init
 
